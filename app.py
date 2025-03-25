@@ -3,7 +3,7 @@ import pandas as pd
 import random
 
 # Streamlit app title
-st.title("SWEE Case Assigner with Team Segmentation and Group Exclusion")
+st.title("SWEE Case Assigner")
 
 # File uploader widget
 uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
