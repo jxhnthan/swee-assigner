@@ -21,7 +21,7 @@ team_data = {
         'Jiaying': []
     },
     'Junior': {
-        'Oliver': ['Eating Disorders', 'Narcissism'],
+        'Oliver': ['Eating Disorders','Narcissism'],
         'Janice': ['Parenting', 'Occupational/Academic Issues', 'Mandarin-speaking'],
         'Andrew': []
     }
@@ -59,9 +59,6 @@ def map_case_types(case_description):
 def get_team_members(selected_groups):
     return [member for group, members in team_data.items() if group in selected_groups for member in members.keys()]
 
-# Assignment methods
-assignment_methods = ["Random Assignment", "Exclusion-Based"]
-
 # Sidebar options
 st.sidebar.header("Group Inclusion Options")
 selected_groups = st.sidebar.multiselect(
@@ -73,7 +70,7 @@ selected_groups = st.sidebar.multiselect(
 if not selected_groups:
     st.warning("Please select at least one group to include.")
 else:
-    method = st.radio("Select Assignment Method:", assignment_methods)
+    method = "Exclusion-Based"  # Always use Exclusion-Based method
 
     if uploaded_file is not None:
         try:
@@ -134,26 +131,21 @@ else:
                         case_types = map_case_types(case_description)  # Get all mapped case types as a list
                         priority = row['Priority Score']
 
-                        if method == "Random Assignment":
-                            # Assign to the team member with the fewest ongoing cases
-                            assigned_member = min(team_members, key=lambda m: ongoing_cases[m])
+                        # Exclusion-Based assignment
+                        excluded_members = []
+                        for group in selected_groups:
+                            for member, exclusions in team_data[group].items():
+                                if any(ct in exclusions for ct in case_types):
+                                    excluded_members.append(member)
 
-                        elif method == "Exclusion-Based":
-                            # Build exclusion and eligible lists
-                            excluded_members = []
-                            for group in selected_groups:
-                                for member, exclusions in team_data[group].items():
-                                    if any(ct in exclusions for ct in case_types):
-                                        excluded_members.append(member)
+                        eligible_members = [m for m in team_members if m not in excluded_members]
 
-                            eligible_members = [m for m in team_members if m not in excluded_members]
-
-                            if eligible_members:
-                                # Assign to the one with the fewest ongoing cases
-                                assigned_member = min(eligible_members, key=lambda m: ongoing_cases[m])
-                            else:
-                                # Fallback to full team if no eligible members
-                                assigned_member = random.choice(team_members)
+                        if eligible_members:
+                            # Assign to the one with the fewest ongoing cases
+                            assigned_member = min(eligible_members, key=lambda m: ongoing_cases[m])
+                        else:
+                            # Fallback to full team if no eligible members
+                            assigned_member = random.choice(team_members)
 
                         # Track the assignment count
                         assignment_counts[assigned_member] += 1
@@ -163,7 +155,7 @@ else:
                     results_df = pd.DataFrame(assignments, columns=["Assigned Member", "Case Name", "Priority", "Case Type"])
                     st.dataframe(results_df)
 
-                    # Add reasoning for each case
+                    # Add reasoning for each case (only for Exclusion-Based)
                     st.subheader("Reasoning for Assignments")
                     for assigned_member, case_name, priority, case_types in assignments:
                         # List of eligible members for reasoning
@@ -178,15 +170,8 @@ else:
                         
                         alt_members = [m for m in eligible_members if m != assigned_member]
 
-                        if method == "Random Assignment":
-                            reasoning = f"{assigned_member} was assigned randomly due to no exclusions or priority criteria. " \
-                                        + (f"Other options were: {', '.join(alt_members)}" if alt_members else "No other options available.")
-                        else:
-                            if assigned_member in eligible_members:
-                                reasoning = f"{assigned_member} was assigned based on having the fewest ongoing cases. " \
-                                            + f"{excluded_reasoning} Other eligible options were: {', '.join(alt_members)}."
-                            else:
-                                reasoning = f"{assigned_member} was randomly assigned because no other eligible members were found."
+                        reasoning = f"{assigned_member} was assigned based on having the fewest ongoing cases. " \
+                                    + f"{excluded_reasoning} Other eligible options were: {', '.join(alt_members)}."
 
                         st.markdown(f"**{case_name}** → {assigned_member} — _{reasoning}_")
 
