@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import random
+import re
 
 # Streamlit app title
 st.title("SWEE Case Assigner")
@@ -8,33 +9,61 @@ st.title("SWEE Case Assigner")
 # File uploader widget
 uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
 
-# Define team segmentation and expertise
+# Define team segmentation and exclusion criteria (e.g., sensitive cases someone shouldn't handle)
 team_data = {
     'Leadership': {
-        'Haikel': ['Work', 'Anxiety', 'Depression'],
-        'Zhengqin': ['Body Image']
+        'Haikel': [],
+        'Zhengqin': []
     },
     'Senior': {
-        'Kirsty': ['Work', 'Anxiety', 'Depression'],
-        'Dominic': ['Work', 'Anxiety', 'Depression'],
-        'Jiaying': ['Work', 'Anxiety', 'Depression']
+        'Kirsty': [],
+        'Dominic': [],
+        'Jiaying': []
     },
     'Junior': {
-        'Oliver': ['Work', 'Anxiety', 'Depression'],
-        'Janice': ['Work', 'Anxiety', 'Depression'],
-        'Andrew': ['Work', 'Anxiety', 'Depression']
+        'Oliver': [],
+        'Janice': ['Parenting', 'Occupational/Academic Issues', 'Mandarin-speaking'],
+        'Andrew': []
     }
 }
 
-# Flatten team members into a list
+# Map client survey responses to case types
+response_to_case_type = {
+    "I've been feeling depressed": "Depression",
+    "I feel anxious or overwhelmed": "Anxiety",
+    "My mood is interfering with my job/school/performance": "Occupational/Academic Issues",
+    "I struggle with building or maintaining relationships": "Relationship Issues",
+    "I can't find purpose and meaning in my life": "Existential Crisis or Life Purpose",
+    "I am grieving": "Grief and Loss",
+    "I have experienced trauma": "Trauma",
+    "I need to talk through a specific challenge": "Situational Stress or Personal Challenge",
+    "I want to gain self confidence": "Self-Esteem/Confidence",
+    "I want to improve myself but I don't know where to start": "Personal Growth/Development",
+    "Recommended to me (friend, family, doctor, etc.)": "External Recommendation",
+    "Sleep problems or appetite changes": "Sleep and Eating Disorders",
+    "Recent major life event or transition": "Life Transition",
+    "Work or academic stress": "Work/Academic Stress",
+    "Other": "Miscellaneous"
+}
+
+def map_case_types(case_description):
+    case_types = []
+    # Try to match the case description to multiple predefined categories
+    for key, value in response_to_case_type.items():
+        if key.lower() in case_description.lower():
+            case_types.append(value)
+    
+    return case_types if case_types else ["Miscellaneous"]  # Default to "Miscellaneous" if no match
+
+# Flatten team members into a list based on selected groups
 def get_team_members(selected_groups):
     return [member for group, members in team_data.items() if group in selected_groups for member in members.keys()]
 
-# Define the assignment methods
-assignment_methods = ["Random Assignment", "Expertise-Based"]
+# Assignment methods
+assignment_methods = ["Random Assignment", "Exclusion-Based"]
 
-# Group exclusion options
-st.sidebar.header("Group Exclusion Options")
+# Sidebar options
+st.sidebar.header("Group Inclusion Options")
 selected_groups = st.sidebar.multiselect(
     "Select Groups to Include:",
     options=["Leadership", "Senior", "Junior"],
@@ -48,26 +77,17 @@ else:
 
     if uploaded_file is not None:
         try:
-            # Load the Excel file into a Pandas ExcelFile object
             excel_file = pd.ExcelFile(uploaded_file)
-            
-            # Display sheet names
             st.subheader("Available Sheets:")
             sheet_names = excel_file.sheet_names
             st.write(sheet_names)
-            
-            # Automatically select "Sheet2" if it exists, otherwise select the first sheet
-            selected_sheet = "Sheet2" if "Sheet2" in sheet_names else sheet_names[0]
-            
-            # Load the selected sheet into a DataFrame
+
+            selected_sheet = st.selectbox("Select sheet to use:", sheet_names, index=sheet_names.index("Sheet2") if "Sheet2" in sheet_names else 0)
             df = excel_file.parse(selected_sheet)
-            
-            # Display selected sheet name
             st.write(f"Displaying data from: {selected_sheet}")
-            
-            if 'Still Pending' in df.columns and 'Priority Score' in df.columns and 'Case Type' in df.columns:
+
+            if 'Still Pending' in df.columns and 'Priority Score' in df.columns and 'Case Description' in df.columns:
                 st.subheader("Filter by 'Still Pending' Status:")
-                
                 status_options = df['Still Pending'].dropna().unique().tolist()
                 status_options.append("All")
                 default_status = ['YES'] if 'YES' in status_options else []
@@ -77,7 +97,7 @@ else:
                     filtered_df = df
                 else:
                     filtered_df = df[df['Still Pending'].isin(selected_status)]
-                
+
                 filtered_df = filtered_df.sort_values(by="Priority Score", ascending=False)
 
                 st.subheader("Filtered Pending Cases (Sorted by Priority)")
@@ -88,65 +108,91 @@ else:
                     st.subheader(f"Assigning Cases using '{method}' Method")
                     assignments = []
 
-                    # Get the filtered list of team members based on selected groups
                     team_members = get_team_members(selected_groups)
                     if not team_members:
                         st.warning("No team members available for the selected groups.")
                         st.stop()
 
-                    # Round-robin index tracker for expertise-based assignments
-                    round_robin_indices = {member: 0 for member in team_members}
+                    # Define current ongoing cases workload for each member
+                    ongoing_cases = {
+                        'Jiaying': 26,
+                        'Janice': 16,
+                        'Dominic': 6,
+                        'Zhengqin': 5,
+                        'Oliver': 19,
+                        'Kirsty': 18,
+                        'Andrew': 13,
+                        'Haikel': 0
+                    }
 
-                    if method == "Random Assignment":
-                        for index, row in filtered_df.iterrows():
-                            assigned_member = random.choice(team_members)
-                            assignments.append((assigned_member, row['Name'], row['Priority Score'], row['Case Type']))
+                    # Track how many cases each member has for balanced distribution
+                    assignment_counts = {member: 0 for member in team_members}
 
-                    elif method == "Expertise-Based":
-                        for index, row in filtered_df.iterrows():
-                            case_name = row['Name']
-                            case_type = row['Case Type']
-                            case_types = [t.strip() for t in case_type.split(',')]
+                    for index, row in filtered_df.iterrows():
+                        case_name = row['Name']
+                        case_description = row['Case Description']  # Assuming 'Case Description' contains client responses
+                        case_types = map_case_types(case_description)  # Get all mapped case types as a list
+                        priority = row['Priority Score']
 
-                            # Find team members with matching expertise
-                            matched_members = [member for group, members in team_data.items() if group in selected_groups
-                                               for member, expertise in members.items()
-                                               if any(ct in expertise for ct in case_types)]
+                        if method == "Random Assignment":
+                            # Assign to the team member with the fewest ongoing cases
+                            assigned_member = min(team_members, key=lambda m: ongoing_cases[m])
 
-                            if matched_members:
-                                # Use round-robin within the matched members
-                                assigned_member = matched_members[round_robin_indices[matched_members[0]] % len(matched_members)]
-                                round_robin_indices[matched_members[0]] += 1
+                        elif method == "Exclusion-Based":
+                            # Build exclusion and eligible lists
+                            excluded_members = []
+                            for group in selected_groups:
+                                for member, exclusions in team_data[group].items():
+                                    if any(ct in exclusions for ct in case_types):
+                                        excluded_members.append(member)
+
+                            eligible_members = [m for m in team_members if m not in excluded_members]
+
+                            if eligible_members:
+                                # Assign to the one with the fewest ongoing cases
+                                assigned_member = min(eligible_members, key=lambda m: ongoing_cases[m])
                             else:
-                                # If no matching expertise, assign to a random team member
+                                # Fallback to full team if no eligible members
                                 assigned_member = random.choice(team_members)
 
-                            # Add the assignment
-                            assignments.append((assigned_member, case_name, row['Priority Score'], row['Case Type']))
+                        # Track the assignment count
+                        assignment_counts[assigned_member] += 1
+                        assignments.append((assigned_member, case_name, priority, case_types))  # Store all case types as a list
 
-                    # Display assignments and reasoning
-                    for assigned_member, case_name, priority, case_type in assignments:
-                        st.text(f"Case '{case_name}' assigned to {assigned_member} (Priority: {priority})")
+                    # Display results
+                    results_df = pd.DataFrame(assignments, columns=["Assigned Member", "Case Name", "Priority", "Case Type"])
+                    st.dataframe(results_df)
 
-                        if method == "Expertise-Based":
-                            case_types = [t.strip() for t in case_type.split(',')]
-                            matched_members = [member for group, members in team_data.items() if group in selected_groups
-                                               for member, expertise in members.items()
-                                               if any(ct in expertise for ct in case_types)]
-                            
-                            if assigned_member in matched_members:
-                                possible_alternatives = [m for m in matched_members if m != assigned_member]
-                                reasoning = f"{assigned_member} was chosen because their expertise matches the case type(s). Possible alternatives: {', '.join(possible_alternatives)}" if possible_alternatives else f"{assigned_member} was chosen because they are the best match."
-                            else:
-                                reasoning = f"{assigned_member} was randomly selected as no matching expertise was found."
-                            
-                            st.write(f"**Reasoning for Case '{case_name}':** {reasoning}")
+                    # Add reasoning for each case
+                    st.subheader("Reasoning for Assignments")
+                    for assigned_member, case_name, priority, case_types in assignments:
+                        # List of eligible members for reasoning
+                        excluded_members = []
+                        for group in selected_groups:
+                            for member, exclusions in team_data[group].items():
+                                if any(ct in exclusions for ct in case_types):
+                                    excluded_members.append(member)
+
+                        excluded_reasoning = f"Excluded members due to case type restrictions: {', '.join(excluded_members)}." \
+                            if excluded_members else "No members were excluded."
+                        
+                        alt_members = [m for m in eligible_members if m != assigned_member]
+
+                        if method == "Random Assignment":
+                            reasoning = f"{assigned_member} was assigned randomly due to no exclusions or priority criteria. " \
+                                        + (f"Other options were: {', '.join(alt_members)}" if alt_members else "No other options available.")
                         else:
-                            st.write(f"**Reasoning for Case '{case_name}':** {assigned_member} was randomly selected.")
+                            if assigned_member in eligible_members:
+                                reasoning = f"{assigned_member} was assigned based on having the fewest ongoing cases. " \
+                                            + f"{excluded_reasoning} Other eligible options were: {', '.join(alt_members)}."
+                            else:
+                                reasoning = f"{assigned_member} was randomly assigned because no other eligible members were found."
+
+                        st.markdown(f"**{case_name}** → {assigned_member} — _{reasoning}_")
 
             else:
-                st.warning("The 'Still Pending', 'Priority Score', or 'Case Type' column is not found in this sheet.")
-            
+                st.warning("The sheet must contain 'Still Pending', 'Priority Score', and 'Case Description' columns.")
+
         except Exception as e:
             st.error(f"An error occurred while reading the file: {e}")
     else:
