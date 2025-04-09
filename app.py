@@ -67,6 +67,12 @@ selected_groups = st.sidebar.multiselect(
     default=["Leadership", "Senior", "Junior"]
 )
 
+# Track the latest assigned therapist in the sidebar
+latest_therapist = st.sidebar.selectbox(
+    "Select the latest assigned therapist:",
+    options=["None", "Haikel", "Zhengqin", "Kirsty", "Dominic", "Jiaying", "Oliver", "Janice", "Andrew"]
+)
+
 if not selected_groups:
     st.warning("Please select at least one group to include.")
 else:
@@ -105,6 +111,7 @@ else:
                     st.subheader(f"Assigning Cases using '{method}' Method")
                     assignments = []
 
+                    # Get the team members based on selected groups
                     team_members = get_team_members(selected_groups)
                     if not team_members:
                         st.warning("No team members available for the selected groups.")
@@ -125,6 +132,13 @@ else:
                     # Track how many cases each member has for balanced distribution
                     assignment_counts = {member: 0 for member in team_members}
 
+                    # Exclude the last assigned therapist from the round-robin process
+                    if latest_therapist != "None" and latest_therapist in team_members:
+                        team_members = [m for m in team_members if m != latest_therapist]
+
+                    # Round-robin logic, starting from the first therapist
+                    round_robin_members = team_members
+
                     for index, row in filtered_df.iterrows():
                         case_name = row['Name']
                         case_description = row['Case Description']  # Assuming 'Case Description' contains client responses
@@ -138,7 +152,7 @@ else:
                                 if any(ct in exclusions for ct in case_types):
                                     excluded_members.append(member)
 
-                        eligible_members = [m for m in team_members if m not in excluded_members]
+                        eligible_members = [m for m in round_robin_members if m not in excluded_members]
 
                         if eligible_members:
                             # Assign to the one with the fewest ongoing cases
@@ -182,7 +196,6 @@ else:
             st.error(f"An error occurred while reading the file: {e}")
     else:
         st.info("Please upload an Excel file to proceed.")
-
 
 
 
