@@ -21,7 +21,7 @@ team_data = {
         'Jiaying': []
     },
     'Junior': {
-        'Oliver': [],
+        'Oliver': ['Eating Disorders', 'Narcissism'],
         'Janice': ['Parenting', 'Occupational/Academic Issues', 'Mandarin-speaking'],
         'Andrew': []
     }
