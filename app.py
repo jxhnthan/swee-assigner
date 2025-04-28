@@ -9,7 +9,7 @@ st.title("SWEE Case Assigner")
 # File uploader widget
 uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
 
-# Define team segmentation and exclusion criteria (e.g., sensitive cases someone shouldn't handle)
+# Define team segmentation and exclusion criteria
 team_data = {
     'Leadership': {
         'Haikel': [],
@@ -21,13 +21,13 @@ team_data = {
         'Jiaying': []
     },
     'Junior': {
-        'Oliver': ['Eating Disorders','Narcissism'],
+        'Oliver': ['Eating Disorders', 'Narcissism'],
         'Janice': ['Parenting', 'Occupational/Academic Issues', 'Mandarin-speaking'],
         'Andrew': []
     }
 }
 
-# Map client survey responses to case types
+# Map survey responses to case types
 response_to_case_type = {
     "I've been feeling depressed": "Depression",
     "I feel anxious or overwhelmed": "Anxiety",
@@ -48,14 +48,11 @@ response_to_case_type = {
 
 def map_case_types(case_description):
     case_types = []
-    # Try to match the case description to multiple predefined categories
     for key, value in response_to_case_type.items():
         if key.lower() in case_description.lower():
             case_types.append(value)
-    
-    return case_types if case_types else ["Miscellaneous"]  # Default to "Miscellaneous" if no match
+    return case_types if case_types else ["Miscellaneous"]
 
-# Flatten team members into a list based on selected groups
 def get_team_members(selected_groups):
     return [member for group, members in team_data.items() if group in selected_groups for member in members.keys()]
 
@@ -67,7 +64,7 @@ selected_groups = st.sidebar.multiselect(
     default=["Leadership", "Senior", "Junior"]
 )
 
-# Track the latest assigned therapist in the sidebar
+# Track latest assigned therapist
 latest_therapist = st.sidebar.selectbox(
     "Select the latest assigned therapist:",
     options=["None", "Haikel", "Zhengqin", "Kirsty", "Dominic", "Jiaying", "Oliver", "Janice", "Andrew"]
@@ -76,7 +73,7 @@ latest_therapist = st.sidebar.selectbox(
 if not selected_groups:
     st.warning("Please select at least one group to include.")
 else:
-    method = "Exclusion-Based"  # Always use Exclusion-Based method
+    method = "Exclusion-Based"  # always exclusion-based
 
     if uploaded_file is not None:
         try:
@@ -111,91 +108,88 @@ else:
                     st.subheader(f"Assigning Cases using '{method}' Method")
                     assignments = []
 
-                    # Get the team members based on selected groups
+                    # Get team members
                     team_members = get_team_members(selected_groups)
                     if not team_members:
-                        st.warning("No team members available for the selected groups.")
+                        st.warning("No team members available.")
                         st.stop()
 
-                    # Define current ongoing cases workload for each member
-                    ongoing_cases = {
-                        'Jiaying': 26,
-                        'Janice': 16,
-                        'Dominic': 6,
-                        'Zhengqin': 5,
-                        'Oliver': 19,
-                        'Kirsty': 18,
-                        'Andrew': 13,
-                        'Haikel': 0
-                    }
-
-                    # Track how many cases each member has for balanced distribution
+                    ongoing_cases = {member: 0 for member in team_members}
                     assignment_counts = {member: 0 for member in team_members}
 
-                    # Exclude the last assigned therapist from the round-robin process
                     if latest_therapist != "None" and latest_therapist in team_members:
                         team_members = [m for m in team_members if m != latest_therapist]
 
-                    # Round-robin logic, starting from the first therapist
-                    round_robin_members = team_members
+                    last_assigned = None
 
                     for index, row in filtered_df.iterrows():
                         case_name = row['Name']
-                        case_description = row['Case Description']  # Assuming 'Case Description' contains client responses
-                        case_types = map_case_types(case_description)  # Get all mapped case types as a list
+                        case_description = row['Case Description']
+                        case_types = map_case_types(case_description)
                         priority = row['Priority Score']
 
-                        # Exclusion-Based assignment
+                        # Determine eligible members
                         excluded_members = []
                         for group in selected_groups:
                             for member, exclusions in team_data[group].items():
                                 if any(ct in exclusions for ct in case_types):
                                     excluded_members.append(member)
 
-                        eligible_members = [m for m in round_robin_members if m not in excluded_members]
+                        eligible_members = [m for m in team_members if m not in excluded_members]
+
+                        # Remove last assigned therapist to avoid back-to-back
+                        if last_assigned in eligible_members and len(eligible_members) > 1:
+                            eligible_members.remove(last_assigned)
 
                         if eligible_members:
-                            # Assign to the one with the fewest ongoing cases
-                            assigned_member = min(eligible_members, key=lambda m: ongoing_cases[m])
+                            assigned_member = min(eligible_members, key=lambda x: ongoing_cases.get(x, 0))
                         else:
-                            # Fallback to full team if no eligible members
                             assigned_member = random.choice(team_members)
 
-                        # Track the assignment count
+                        last_assigned = assigned_member
+                        ongoing_cases[assigned_member] += 1
                         assignment_counts[assigned_member] += 1
-                        assignments.append((assigned_member, case_name, priority, case_types))  # Store all case types as a list
+                        assignments.append((assigned_member, case_name, priority, case_types))
 
                     # Display results
-                    results_df = pd.DataFrame(assignments, columns=["Assigned Member", "Case Name", "Priority", "Case Type"])
+                    results_df = pd.DataFrame(assignments, columns=["Assigned WBSP", "Client Name", "Priority", "Case Type"])
                     st.dataframe(results_df)
 
-                    # Add reasoning for each case (only for Exclusion-Based)
+                    # --- Clean Reasoning Section ---
                     st.subheader("Reasoning for Assignments")
+
                     for assigned_member, case_name, priority, case_types in assignments:
-                        # List of eligible members for reasoning
                         excluded_members = []
                         for group in selected_groups:
                             for member, exclusions in team_data[group].items():
                                 if any(ct in exclusions for ct in case_types):
                                     excluded_members.append(member)
 
-                        excluded_reasoning = f"Excluded members due to case type restrictions: {', '.join(excluded_members)}." \
-                            if excluded_members else "No members were excluded."
-                        
-                        alt_members = [m for m in eligible_members if m != assigned_member]
+                        excluded_reasoning = f"Excluded members due to case type restrictions: {', '.join(excluded_members)}." if excluded_members else "No members were excluded."
 
-                        reasoning = f"{assigned_member} was assigned based on having the fewest ongoing cases. " \
-                                    + f"{excluded_reasoning} Other eligible options were: {', '.join(alt_members)}."
+                        alt_members = [m for m in team_members if m not in excluded_members and m != assigned_member]
 
-                        st.markdown(f"**{case_name}** → {assigned_member} — _{reasoning}_")
+                        with st.expander(f"{case_name} → {assigned_member}"):
+                            st.markdown(f"""
+                            **Assigned WBSP:** {assigned_member}  
+                            **Case Priority:** {priority}  
+                            **Case Nature:** {', '.join(case_types)}
+                            
+                            ---
+                            **Assignment Reasoning:**  
+                            - 📝 Assigned based on having the fewest ongoing cases.
+                            - 🚫 {excluded_reasoning}
+                            - 🤝 Other eligible members were: {', '.join(alt_members) if alt_members else 'None'}
+                            """)
 
             else:
-                st.warning("The sheet must contain 'Still Pending', 'Priority Score', and 'Case Description' columns.")
+                st.warning("Sheet must contain 'Still Pending', 'Priority Score', and 'Case Description' columns.")
 
         except Exception as e:
-            st.error(f"An error occurred while reading the file: {e}")
+            st.error(f"An error occurred: {e}")
     else:
         st.info("Please upload an Excel file to proceed.")
+
 
 
 
