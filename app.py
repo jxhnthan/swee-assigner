@@ -18,14 +18,14 @@ team_data = {
     'Senior': {
         'Kirsty': [],
         'Dominic': [],
-        'Jiaying': []
+        'Jiaying': [],
         'Claudia': []
     },
     'Junior': {
         'Oliver': ['Eating Disorders', 'Narcissism'],
         'Janice': ['Parenting', 'Occupational/Academic Issues', 'Mandarin-speaking'],
-        'Andrew': []
-        'Seanna': []
+        'Andrew': [],
+        'Seanna': [],
         'Xiao Hui': []
     }
 }
