@@ -30,6 +30,21 @@ team_data = {
     }
 }
 
+# Predefined ongoing caseloads
+predefined_caseloads = {
+    "Haikel": 0,
+    "Zhengqin": 5,
+    "Kirsty": 15,
+    "Dominic": 3,
+    "Jiaying": 14,
+    "Claudia": 0,
+    "Oliver": 20,
+    "Janice": 16,
+    "Andrew": 13,
+    "Seanna": 0,
+    "Xiao Hui": 0
+}
+
 # Map survey responses to case types
 response_to_case_type = {
     "I've been feeling depressed": "Depression",
@@ -67,16 +82,15 @@ selected_groups = st.sidebar.multiselect(
     default=["Leadership", "Senior", "Junior"]
 )
 
-# Track latest assigned therapist
 latest_therapist = st.sidebar.selectbox(
     "Select the latest assigned therapist:",
-    options=["None", "Haikel", "Zhengqin", "Kirsty", "Dominic", "Jiaying", "Oliver", "Janice", "Andrew", "Claudia", "Xiao Hui", "Seanna"]
+    options=["None"] + list(predefined_caseloads.keys())
 )
 
 if not selected_groups:
     st.warning("Please select at least one group to include.")
 else:
-    method = "Exclusion-Based"  # always exclusion-based
+    method = "Exclusion-Based"
 
     if uploaded_file is not None:
         try:
@@ -111,14 +125,18 @@ else:
                     st.subheader(f"Assigning Cases using '{method}' Method")
                     assignments = []
 
-                    # Get team members
                     team_members = get_team_members(selected_groups)
                     if not team_members:
                         st.warning("No team members available.")
                         st.stop()
 
-                    ongoing_cases = {member: 0 for member in team_members}
+                    # Initialize ongoing_cases using predefined values
+                    ongoing_cases = {member: predefined_caseloads.get(member, 0) for member in team_members}
                     assignment_counts = {member: 0 for member in team_members}
+
+                    # Show caseload summary
+                    st.sidebar.subheader("Current Ongoing Caseloads")
+                    st.sidebar.dataframe(pd.DataFrame.from_dict(ongoing_cases, orient="index", columns=["Ongoing Cases"]))
 
                     if latest_therapist != "None" and latest_therapist in team_members:
                         team_members = [m for m in team_members if m != latest_therapist]
@@ -140,11 +158,13 @@ else:
 
                         eligible_members = [m for m in team_members if m not in excluded_members]
 
-                        # Remove last assigned therapist to avoid back-to-back
+                        # Avoid last assigned therapist for back-to-back assignment
                         if last_assigned in eligible_members and len(eligible_members) > 1:
                             eligible_members.remove(last_assigned)
 
+                        # Assign based on fewest cases, breaking ties randomly
                         if eligible_members:
+                            random.shuffle(eligible_members)
                             assigned_member = min(eligible_members, key=lambda x: ongoing_cases.get(x, 0))
                         else:
                             assigned_member = random.choice(team_members)
@@ -158,9 +178,11 @@ else:
                     results_df = pd.DataFrame(assignments, columns=["Assigned WBSP", "Client Name", "Priority", "Case Type"])
                     st.dataframe(results_df)
 
-                    # --- Clean Reasoning Section ---
-                    st.subheader("Reasoning for Assignments")
+                    # Download button
+                    st.download_button("Download Assignments as CSV", results_df.to_csv(index=False), "assignments.csv")
 
+                    # Reasoning
+                    st.subheader("Reasoning for Assignments")
                     for assigned_member, case_name, priority, case_types in assignments:
                         excluded_members = []
                         for group in selected_groups:
@@ -169,7 +191,6 @@ else:
                                     excluded_members.append(member)
 
                         excluded_reasoning = f"Excluded members due to case type restrictions: {', '.join(excluded_members)}." if excluded_members else "No members were excluded."
-
                         alt_members = [m for m in team_members if m not in excluded_members and m != assigned_member]
 
                         with st.expander(f"{case_name} → {assigned_member}"):
@@ -180,7 +201,7 @@ else:
                             
                             ---
                             **Assignment Reasoning:**  
-                            - 📝 Assigned based on having the fewest ongoing cases.
+                            - 📝 Assigned based on having the fewest ongoing cases (including prior caseload).
                             - 🚫 {excluded_reasoning}
                             - 🤝 Other eligible members were: {', '.join(alt_members) if alt_members else 'None'}
                             """)
