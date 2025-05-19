@@ -70,7 +70,7 @@ selected_groups = st.sidebar.multiselect(
 # Track latest assigned therapist
 latest_therapist = st.sidebar.selectbox(
     "Select the latest assigned therapist:",
-    options=["None", "Haikel", "Zhengqin", "Kirsty", "Dominic", "Jiaying", "Oliver", "Janice", "Andrew"]
+    options=["None", "Haikel", "Zhengqin", "Kirsty", "Dominic", "Jiaying", "Oliver", "Janice", "Andrew", "Claudia", "Xiao Hui", "Seanna"]
 )
 
 if not selected_groups:
